@@ -104,6 +104,8 @@ article img{max-width:100%}table{border-collapse:collapse;max-width:100%;display
 .ad{margin:22px 0;text-align:center}footer{margin-top:40px;border-top:2px solid var(--r);padding:20px 0;color:var(--m);background:var(--p)}
 .lv{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.lv a,button{padding:6px 14px;border:2px solid var(--i);border-radius:999px;text-decoration:none;background:var(--c);color:var(--i);font:inherit;cursor:pointer}
 #q{width:100%;padding:12px;border:2px solid var(--i);border-radius:6px;font:inherit;background:var(--c);color:var(--i)}
+.skip{position:absolute;inset-inline-start:-999px}.skip:focus{inset-inline-start:8px;top:8px;background:var(--y);color:#1B2A5C;padding:6px 12px;z-index:9}
+.pager{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0}.pager a{padding:4px 12px;border:2px solid var(--i);border-radius:6px;text-decoration:none}.pager a[aria-current]{background:var(--i);color:var(--p)}
 @media print{header,footer,.ad,.noprint,.lv{display:none}body{background:#fff;color:#000}article{border:0}}"""
 
 NAV = [("index.html", "الرئيسية"), ("articles.html", "المقالات"), ("news.html", "الأخبار الرسمية"),
@@ -122,17 +124,20 @@ def page(name, title, desc, body, head=""):
     head_ad = (f'<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={C["adsense_client"]}" '
                'crossorigin="anonymous"></script>') if C["adsense_client"] else ""
     nav = "".join(f'<a href="{h}">{t}</a>' for h, t in NAV)
+    ver = (f'<meta name="google-site-verification" content="{esc(C["google_site_verification"])}">'
+           if C.get("google_site_verification") else "")
     url = f'{C["base_url"].rstrip("/")}/{quote(name)}'
     doc = f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} – {esc(C["site_name"])}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1B2A5C">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%231B2A5C'/%3E%3Ctext x='50' y='70' font-size='62' text-anchor='middle' fill='%23FFD84D'%3E%D8%AF%3C/text%3E%3C/svg%3E">{ver}<title>{esc(title)} – {esc(C["site_name"])}</title>
 <meta name="description" content="{esc(desc)}"><link rel="canonical" href="{url}"><link rel="alternate" type="application/rss+xml" href="feed.xml">
 <meta property="og:title" content="{esc(title)}"><meta property="og:description" content="{esc(desc)}"><meta property="og:type" content="website"><meta property="og:locale" content="ar_MA">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">{head_ad}{head}</head><body>
+<link rel="stylesheet" href="style.css">{head_ad}{head}</head><body><a class="skip" href="#main">تخطي إلى المحتوى</a>
 <header><div class="w bar"><a class="logo" href="index.html"><b>{esc(C["site_name"].split()[0])}</b> {esc(" ".join(C["site_name"].split()[1:]))}</a><nav>{nav}</nav></div></header>
-<main class="w">{body}</main>
+<main class="w" id="main">{body}</main>
 <footer><div class="w"><a href="privacy.html">سياسة الخصوصية</a> · <a href="terms.html">شروط الاستخدام</a> · <a href="contact.html">اتصل بنا</a>
-<p>© {dt.date.today().year} {esc(C["site_name"])}. المواد الإخبارية تُنسب لأصحابها وتحيل إلى مصادرها الأصلية.</p></div></footer></body></html>"""
+<p>© {dt.date.today().year} {esc(C["site_name"])}. آخر تحديث: {TODAY}. المواد الإخبارية تُنسب لأصحابها وتحيل إلى مصادرها الأصلية.</p></div></footer></body></html>"""
     (OUT / name).write_text(doc, "utf-8")
 
 
@@ -148,6 +153,21 @@ def news_row(i):
 
 
 # ---------- البناء ----------
+def subjects_nav(subs):
+    return ('<div class="lv">' + "".join(f'<a href="subject-{quote(x)}.html">{esc(x)}</a>' for x in subs) + "</div>") if subs else ""
+
+
+def paginate(base, title, desc, rows, wrap, per=20, pre=""):
+    pages = [rows[i:i + per] for i in range(0, len(rows), per)] or [[]]
+    href = lambda k: f"{base}.html" if k == 1 else f"{base}-{k}.html"
+    for n, chunk in enumerate(pages, 1):
+        pager = ""
+        if len(pages) > 1:
+            pager = '<nav class="pager" aria-label="الصفحات">' + "".join(
+                f'<a href="{href(k)}"' + (' aria-current="page"' if k == n else "") + f">{k}</a>" for k in range(1, len(pages) + 1)) + "</nav>"
+        page(href(n), title + (f" – صفحة {n}" if n > 1 else ""), desc, f"{pre}{ad()}{wrap(chunk)}{pager}")
+
+
 LEVELS = ["الأولى", "الثانية", "الثالثة", "الرابعة", "الخامسة", "السادسة"]
 
 
@@ -157,26 +177,28 @@ def levels_nav():
 
 def build(items, posts):
     OUT.mkdir(exist_ok=True)
+    subjects = sorted({p["subject"] for p in posts if p["subject"]})
     (OUT / "style.css").write_text(CSS, "utf-8")
     if (ROOT / "assets").exists():
         shutil.copytree(ROOT / "assets", OUT / "assets", dirs_exist_ok=True)
     for p in posts:
+        mins = max(1, round(len(re.sub(r"<[^>]+>", " ", p["html"]).split()) / 180))
         ld = json.dumps({"@context": "https://schema.org", "@type": "Article", "headline": p["title"], "datePublished": p["date"],
                          "inLanguage": "ar", "author": {"@type": "Organization", "name": C["site_name"]}}, ensure_ascii=False).replace("</", "<\\/")
         rel = [q for q in posts if q is not p and ((p["level"] and q["level"] == p["level"]) or (p["subject"] and q["subject"] == p["subject"]))][:3]
         relh = f'<h2>مقالات ذات صلة</h2><div class="grid">{"".join(post_card(q) for q in rel)}</div>' if rel else ""
         page(f'{p["slug"]}.html', p["title"], p["summary"] or p["title"],
-             f'<article><h1>{esc(p["title"])}</h1><small>{esc(p["date"])} · {esc(p["level"])} · {esc(p["subject"])}</small> '
+             f'<article><h1>{esc(p["title"])}</h1><small>{esc(p["date"])} · {esc(p["level"])} · {esc(p["subject"])} · {mins} د قراءة</small> '
              f'<button class="noprint" onclick="window.print()">طباعة</button>'
              f'{ad()}{p["html"]}{ad()}</article>{relh}<p><a href="articles.html">← كل المقالات</a></p>',
              f'<script type="application/ld+json">{ld}</script>')
     page("index.html", C["site_name"], C["tagline"],
-         f'<h1>{esc(C["tagline"])}</h1>{levels_nav()}{ad()}<h2>أحدث المقالات</h2><div class="grid">{"".join(post_card(p) for p in posts[:6])}</div>'
+         f'<h1>{esc(C["tagline"])}</h1>{levels_nav()}{subjects_nav(subjects)}{ad()}<h2>أحدث المقالات</h2><div class="grid">{"".join(post_card(p) for p in posts[:6])}</div>'
          f'<h2>آخر الأخبار الرسمية</h2>{"".join(news_row(i) for i in items[:15])}<p><a href="news.html">كل الأخبار ←</a></p>{ad()}')
-    page("articles.html", "المقالات والموارد", "دروس وجذاذات وتمارين",
-         f'<h1>المقالات والموارد</h1><div class="grid">{"".join(post_card(p) for p in posts)}</div>{ad()}')
-    page("news.html", "الأخبار الرسمية", "آخر مستجدات التعليم الابتدائي بالمغرب",
-         f'<h1>الأخبار الرسمية</h1>{ad()}{"".join(news_row(i) for i in items)}')
+    paginate("articles", "المقالات والموارد", "دروس وجذاذات وتمارين", posts,
+             lambda c: f'<div class="grid">{"".join(post_card(p) for p in c)}</div>', 18, "<h1>المقالات والموارد</h1>")
+    paginate("news", "الأخبار الرسمية", "آخر مستجدات التعليم الابتدائي بالمغرب", items,
+             lambda c: "".join(news_row(i) for i in c), 30, "<h1>الأخبار الرسمية</h1>")
     mail = esc(C["contact_email"])
     page("about.html", "من نحن", "تعريف بالموقع",
          f'<h1>من نحن</h1><p>{esc(C["site_name"])} موقع مستقل يجمع مستجدات التعليم الابتدائي بالمغرب من مصادر رسمية وإعلامية، '
@@ -191,6 +213,10 @@ def build(items, posts):
          'وقد تستخدم Google وشركاؤها ملفات تعريف الارتباط (كوكيز) لعرض إعلانات مخصصة بناءً على زياراتك السابقة لهذا الموقع ومواقع أخرى. '
          'يمكنك إدارة الإعلانات المخصصة من <a href="https://adssettings.google.com" rel="noopener">إعدادات إعلانات Google</a>. '
          'باستمرارك في تصفح الموقع فإنك توافق على هذه السياسة.</p>')
+    for sname in subjects:
+        sel = [p for p in posts if p["subject"] == sname]
+        page(f"subject-{sname}.html", sname, f"مقالات وموارد {sname} للتعليم الابتدائي",
+             f'<h1>{esc(sname)}</h1>{levels_nav()}{ad()}<div class="grid">{"".join(post_card(p) for p in sel)}</div>')
     for n, name in enumerate(LEVELS, 1):
         sel = [p for p in posts if name in p["level"]]
         page(f"level-{n}.html", f"السنة {name} ابتدائي", f"دروس وموارد السنة {name} من التعليم الابتدائي",
@@ -220,6 +246,7 @@ def build(items, posts):
     base = C["base_url"].rstrip("/")
     urls = [f"{base}/{quote(n)}" for n in ["index.html", "articles.html", "news.html", "search.html"]] + \
            [f"{base}/level-{n}.html" for n in range(1, 7)] + \
+           [f"{base}/subject-{quote(x)}.html" for x in subjects] + \
            [f'{base}/{quote(p["slug"])}.html' for p in posts]
     (OUT / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
                                      + "".join(f"<url><loc>{u}</loc></url>" for u in urls) + "</urlset>", "utf-8")
